@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Go Blip – Latency Monitor</title>
-    <!-- Include Chart.js and its date adapter (using date-fns in this example) -->
+    <!-- Chart.js and its time adapter -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
@@ -18,18 +18,27 @@
 </div>
 
 <script>
-    // create a Chart.js line chart with time on x-axis and latency (ms) on y-axis
+    // Create a Chart.js line chart with two datasets.
     const ctx = document.getElementById('latencyChart').getContext('2d');
     const latencyChart = new Chart(ctx, {
         type: 'line',
         data: {
-            datasets: [{
-                label: 'Ping Latency (ms)',
-                data: [],
-                borderColor: 'green',
-                fill: false,
-                tension: 0.1,
-            }]
+            datasets: [
+                {
+                    label: 'gstatic Latency (ms)',
+                    data: [],
+                    borderColor: 'green',
+                    fill: false,
+                    tension: 0.1,
+                },
+                {
+                    label: 'apenwarr Latency (ms)',
+                    data: [],
+                    borderColor: 'blue',
+                    fill: false,
+                    tension: 0.1,
+                }
+            ]
         },
         options: {
             responsive: true,
@@ -37,7 +46,6 @@
                 x: {
                     type: 'time',
                     time: {
-                        // display format can be adjusted
                         tooltipFormat: 'MMM d, yyyy, HH:mm:ss',
                         displayFormats: {
                             second: 'HH:mm:ss'
@@ -59,35 +67,40 @@
         }
     });
 
-    // Connect to the WebSocket endpoint
+    // Connect to the WebSocket endpoint.
     const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
     const wsUrl = protocol + '://' + location.host + '/ws';
     const socket = new WebSocket(wsUrl);
 
-    socket.onopen = function(event) {
+    socket.onopen = () => {
         console.log('WebSocket connection established.');
     };
 
-    socket.onmessage = function(event) {
+    socket.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            // data.timestamp is expected in ISO format; data.latency is a number.
+            // Append data points for each dataset.
+            // Data points should have x (timestamp) and y (latency).
             latencyChart.data.datasets[0].data.push({
                 x: data.timestamp,
-                y: data.latency
+                y: data.gstatic_latency
             });
-            // Update the chart (you may throttle this update if desired)
+            latencyChart.data.datasets[1].data.push({
+                x: data.timestamp,
+                y: data.apenwarr_latency
+            });
+            // Update the chart.
             latencyChart.update();
         } catch (e) {
             console.error('Error parsing message:', e);
         }
     };
 
-    socket.onclose = function(event) {
+    socket.onclose = () => {
         console.log('WebSocket connection closed.');
     };
 
-    socket.onerror = function(error) {
+    socket.onerror = (error) => {
         console.error('WebSocket error:', error);
     };
 </script>

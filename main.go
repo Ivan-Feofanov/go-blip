@@ -9,22 +9,23 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// PingResult represents one measurement.
+// PingResult holds the timestamp and the latencies for two endpoints.
 type PingResult struct {
-	Timestamp time.Time `json:"timestamp"`
-	Latency   int64     `json:"latency"` // in milliseconds
+	Timestamp       time.Time `json:"timestamp"`
+	GstaticLatency  int64     `json:"gstatic_latency"`  // in milliseconds
+	ApenwarrLatency int64     `json:"apenwarr_latency"` // in milliseconds
 }
 
-// Upgrader is used for upgrading HTTP connections to WebSocket.
+// WebSocket upgrader.
 var upgrader = websocket.Upgrader{
-	// Allow any origin (for testing)
+	// Allow any origin (for testing purposes)
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
-	// Upgrade the connection to WebSocket.
+	// Upgrade connection to WebSocket.
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Upgrade error:", err)
@@ -32,31 +33,43 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// ticker for periodic ping (e.g., every second)
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	targetURL := "https://www.gstatic.com/generate_204" // lightweight target
+	// Define the two endpoints.
+	gstaticURL := "https://www.gstatic.com/generate_204" // lightweight target
+	apenwarrURL := "https://apenwarr.ca"                 // middleweight target
 
 	for {
 		select {
-		case t := <-ticker.C:
-			// measure the latency by doing a simple GET request
+		case tick := <-ticker.C:
+			// Measure latency for gstatic.
 			start := time.Now()
-			resp, err := http.Get(targetURL)
-			latency := time.Since(start).Milliseconds()
+			resp, err := http.Get(gstaticURL)
+			gLatency := time.Since(start).Milliseconds()
 			if err != nil {
-				log.Println("Ping error:", err)
-				// if there’s an error, you can choose to mark it with a high latency value
-				latency = -1
+				log.Println("Gstatic ping error:", err)
+				gLatency = -1 // indicate error
 			} else {
 				resp.Body.Close()
 			}
 
-			// prepare the JSON record with current time and latency
+			// Measure latency for apenwarr.
+			start = time.Now()
+			resp, err = http.Get(apenwarrURL)
+			aLatency := time.Since(start).Milliseconds()
+			if err != nil {
+				log.Println("Apennwarr ping error:", err)
+				aLatency = -1
+			} else {
+				resp.Body.Close()
+			}
+
+			// Package both measurements.
 			result := PingResult{
-				Timestamp: t.UTC(), // send UTC timestamp (or use local time as desired)
-				Latency:   latency,
+				Timestamp:       tick.UTC(), // using UTC; adjust if needed
+				GstaticLatency:  gLatency,
+				ApenwarrLatency: aLatency,
 			}
 			data, err := json.Marshal(result)
 			if err != nil {
@@ -64,7 +77,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			// write JSON message to the WebSocket
+			// Send the JSON record over WebSocket.
 			if err := conn.WriteMessage(websocket.TextMessage, data); err != nil {
 				log.Println("WebSocket Write error:", err)
 				return
@@ -74,7 +87,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	// serve the index.html file (assumed to be in the same directory)
+	// Serve the index.html file.
 	http.ServeFile(w, r, "index.html")
 }
 
@@ -83,7 +96,7 @@ func main() {
 	http.HandleFunc("/ws", wsHandler)
 
 	port := ":8080"
-	log.Printf("Starting server on http://localhost%s\n", port)
+	log.Printf("Server started on http://localhost%s\n", port)
 	if err := http.ListenAndServe(port, nil); err != nil {
 		log.Fatal("ListenAndServe:", err)
 	}
